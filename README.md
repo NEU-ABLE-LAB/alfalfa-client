@@ -1,3 +1,8 @@
+# Alfalfa Client (Newer Pandas Support)
+
+The purpose of this branch is to test Alfalfa Client to support newer version of Pandas, to ensure the compatibility with Building-Controls-Simulator (https://github.com/ecobee/building-controls-simulator)
+
+
 # Alfalfa Client
 
 The purpose of this repository is to provide a standalone client for use with the Alfalfa application.  It additionally includes a Historian to quickly/easily enable saving of results from Alfalfa simulations.
