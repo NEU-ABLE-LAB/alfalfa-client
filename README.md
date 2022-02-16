@@ -5,7 +5,7 @@ The list of modifications:
  - Changed the Pandas version from 0.24.2 to 1.2.4
  - Changed the Python version to 3.8.9
  - Fixed the issue when using alfalfa-client inside a docker container (e.g., Jupyter notebook) to Alfalfa deployed on localhost (of the host machine): see https://github.com/NREL/alfalfa-client/issues/20#issue-1131706037
- - *Warning*: This is an experimental branch with potential bugs for Whole Energy Home project.
+ - *Warning*: This is an experimental branch for Whole Energy Home project, with potential bugs.
  
 Original README below.
 
