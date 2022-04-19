@@ -116,7 +116,7 @@ def submit_one(args):
         print("Could not get upload-url")
 
     json = response.json()
-    postURL = json['url']
+    postURL = json['url'].replace("http://localhost", url)
     formData = OrderedDict(json['fields'])
     formData['file'] = ('filename', open(path, 'rb'))
 

@@ -1,3 +1,15 @@
+# Alfalfa Client (Newer Pandas Support)
+
+The purpose of this branch is to test Alfalfa Client to support newer version of Pandas, to ensure the compatibility with Building-Controls-Simulator (https://github.com/ecobee/building-controls-simulator)
+The list of modifications:
+ - Changed the Pandas version from 0.24.2 to 1.2.4
+ - Changed the Python version to 3.8.9
+ - Fixed the issue when using alfalfa-client inside a docker container (e.g., Jupyter notebook) to Alfalfa deployed on localhost (of the host machine): see https://github.com/NREL/alfalfa-client/issues/20#issue-1131706037
+ - *Warning*: This is an experimental branch for Whole Energy Home project, with potential bugs.
+ 
+Original README below.
+
+
 # Alfalfa Client
 
 The purpose of this repository is to provide a standalone client for use with the Alfalfa application. It additionally includes a Historian to quickly/easily enable saving of results from Alfalfa simulations.
