@@ -142,7 +142,7 @@ class AlfalfaClient:
             sleep(2)
         raise AlfalfaClientException(f"'wait' timed out waiting for status: '{desired_status}', current status: '{current_status}'")
 
-    def upload_model(self, model_path: os.PathLike) -> ModelID:
+    def upload_model(self, model_path: os.PathLike, minio_ip=None) -> ModelID:
         """Upload a model to alfalfa
 
         :param model_path: path to model file or folder or list of paths
@@ -156,9 +156,8 @@ class AlfalfaClient:
         response = self._request('models/upload', parameters=payload)
         response_body = response.json()
         post_url = response_body['url']
-        # post_url = 'http://172.18.0.8'
-        if "localhost" in post_url:
-            post_url = post_url.replace("localhost","172.18.0.5")
+        if minio_ip:
+            post_url = post_url.replace("localhost",minio_ip)
             # post_url = post_url.replace("localhost","172.18.0.8")
             # post_url = post_url.replace("9000","80"
 
@@ -189,7 +188,7 @@ class AlfalfaClient:
         return run_id
 
     @parallelize
-    def submit(self, model_path: Union[str, List[str]], wait_for_status: bool = True) -> SiteID:
+    def submit(self, model_path: Union[str, List[str]],minio_ip=None, wait_for_status: bool = True) -> SiteID:
         """Submit a model to alfalfa
 
         :param model_path: path to the model to upload or list of paths
@@ -198,8 +197,7 @@ class AlfalfaClient:
         :returns: id of created run
         :rtype: str"""
 
-        model_id = self.upload_model(model_path)
-
+        model_id = self.upload_model(model_path,minio_ip)
         # After the file has been uploaded, then tell BOPTEST to process the site
         # This is done not via the haystack api, but through a REST api
         run_id = self.create_run_from_model(model_id, wait_for_status=wait_for_status)
