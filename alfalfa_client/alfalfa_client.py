@@ -156,6 +156,11 @@ class AlfalfaClient:
         response = self._request('models/upload', parameters=payload)
         response_body = response.json()
         post_url = response_body['url']
+        # post_url = 'http://172.18.0.8'
+        if "localhost" in post_url:
+            post_url = post_url.replace("localhost","172.18.0.5")
+            # post_url = post_url.replace("localhost","172.18.0.8")
+            # post_url = post_url.replace("9000","80"
 
         model_id = response_body['modelID']
         form_data = OrderedDict(response_body['fields'])
