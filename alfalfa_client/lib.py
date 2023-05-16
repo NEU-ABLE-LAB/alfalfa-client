@@ -28,199 +28,100 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ****************************************************************************************************
 """
 
-import json
-import os
-import time
-import uuid
-from collections import OrderedDict
-
-import requests
-from requests_toolbelt import MultipartEncoder
-
-
-# remove any hastack type info from value and convert numeric strings
-# to python float. ie s: maps to python string n: maps to python float,
-# other values are simply returned unchanged, thus retaining any haystack type prefix
-def convert(value):
-    if value[0:2] == 's:':
-        return value[2:]
-    elif value[0:2] == 'n:':
-        return float(value[2:])
-    else:
-        return value
+import concurrent.futures
+import functools
+import shutil
+import tempfile
+from functools import partial
+from os import PathLike, path
+from pathlib import Path
+from typing import List
 
 
-# Remove haystack type info (s: and n: ONLY) from a list of strings.
-# Return list
-def convert_all(values):
-    v2 = []
-    for v in values:
-        v2.append(convert(v))
-    return v2
+def parallelize(func):
+    """Parallelize a function
+    Decorator which, when applied to a function, will parallelize the function
+    on the first non-self parameter. If a list is passed n instances of the
+    original function will be called inside Threads. The results will be returned
+    as a list with the same order as the original. If a list is not passed, the
+    original function will be called.
 
+    """
 
-def status(url, run_id):
-    status = ''
+    def parallel_call(func, iter_vals: List, args: List = [], kwargs: dict = {}):
+        responses = [None] * len(iter_vals)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future_to_index = {executor.submit(func, iter_vals[i], *args, **kwargs): i for i in range(len(iter_vals))}
+            for future in concurrent.futures.as_completed(future_to_index):
+                arg = future_to_index[future]
 
-    query = '{ viewer{ runs(run_id: "%s") { status } } }' % run_id
-    for i in range(3):
-        response = requests.post(url + '/graphql', json={'query': query})
-        if response.status_code == 200:
-            break
-    if response.status_code != 200:
-        print("Could not get status")
+                responses[arg] = future.result()
+        return responses
 
-    j = json.loads(response.text)
-    runs = j["data"]["viewer"]["runs"]
-    if runs:
-        status = runs["status"]
-
-    return status
-
-
-def get_error_log(url, run_id):
-    error_log = ''
-
-    query = '{ viewer{ runs(run_id: "%s") { error_log } } }' % run_id
-    for i in range(3):
-        response = requests.post(url + '/graphql', json={'query': query})
-        if response.status_code == 200:
-            break
-    if response.status_code != 200:
-        print("Could not get error log")
-
-    j = json.loads(response.text)
-    runs = j["data"]["viewer"]["runs"]
-    if runs:
-        error_log = runs["error_log"]
-
-    return error_log
-
-
-def wait(url, run_id, desired_status):
-    pass
-
-    attempts = 0
-    while attempts < 6000:
-        attempts = attempts + 1
-        current_status = status(url, run_id)
-
-        if current_status == "ERROR":
-            error_log = get_error_log(url, run_id)
-            raise AlfalfaException(error_log)
-
-        if desired_status:
-            if attempts % 2 == 0:
-                print("Desired status: {}\t\tCurrent status: {}".format(desired_status, current_status))
-            if current_status == desired_status:
-                break
-        elif current_status:
-            break
-        time.sleep(2)
-
-
-def submit_one(args):
-    url = args["url"]
-    path = args["path"]
-
-    filename = os.path.basename(path)
-    uid = str(uuid.uuid1())
-
-    key = 'uploads/' + uid + '/' + filename
-    payload = {'name': key}
-
-    # Get a template for the file upload form data
-    # The server has an api to give this to us
-    for i in range(3):
-        response = requests.post(url + '/upload-url', json=payload)
-        if response.status_code == 200:
-            break
-    if response.status_code != 200:
-        print("Could not get upload-url")
-
-    json = response.json()
-    postURL = json['url'].replace("http://localhost", url)
-    formData = OrderedDict(json['fields'])
-    formData['file'] = ('filename', open(path, 'rb'))
-
-    # Use the form data from the server to actually upload the file
-    encoder = MultipartEncoder(fields=formData)
-    for _ in range(3):
-        response = requests.post(postURL, data=encoder, headers={'Content-Type': encoder.content_type})
-        if response.status_code == 204:
-            break
-    if response.status_code != 204:
-        print("Could not post file")
-
-    # After the file has been uploaded, then tell BOPTEST to process the site
-    # This is done not via the haystack api, but through a graphql api
-    mutation = 'mutation { addSite(modelName: "%s", uploadID: "%s") }' % (filename, uid)
-    for _ in range(3):
-        response = requests.post(url + '/graphql', json={'query': mutation})
-        if response.status_code == 200:
-            break
-    if response.status_code != 200:
-        print("Could not addSite")
-
-    wait(url, uid, "READY")
-
-    return uid
-
-
-def start_one(args):
-    url = args["url"]
-    site_id = args["site_id"]
-    kwargs = args["kwargs"]
-
-    mutation = 'mutation { runSite(siteRef: "%s"' % site_id
-
-    mutation = mutation + ', timescale: %s' % kwargs.get("timescale", 5)
-
-    if "start_datetime" in kwargs:
-        mutation = mutation + ', startDatetime: "%s"' % kwargs["start_datetime"]
-    if "end_datetime" in kwargs:
-        mutation = mutation + ', endDatetime: "%s"' % kwargs["end_datetime"]
-
-    mutation = mutation + ', realtime: %s' % kwargs.get("realtime", "false")
-
-    # check if external_clock is bool, if so then convert to
-    # downcase string
-    v = kwargs.get("external_clock", "false")
-    if isinstance(v, bool):
-        v = 'true' if v else 'false'
-
-    mutation = mutation + ', externalClock: %s' % v.lower()
-
-    mutation = mutation + ') }'
-
-    for _ in range(3):
-        response = requests.post(url + '/graphql', json={'query': mutation})
-        if response.status_code == 200:
-            break
+    @functools.wraps(func)
+    def parallel_wrapper(self, *args, **kwargs):
+        # Find the first parameter as either an arg or kwarg
+        if len(args) > 0:
+            val = args[0]
+            args = args[1:]
         else:
-            print("Start one status code: {}".format(response.status_code))
-            print(f"start_one error: {response.content}")
+            first_varname = func.__code__.co_varnames[1]
+            if first_varname in kwargs.keys():
+                val = kwargs[first_varname]
+                del kwargs[first_varname]
+            else:
+                raise TypeError(f"{func.__name__}() missing 1 required positional argument: '{first_varname}'")
 
-    wait(url, site_id, "RUNNING")
+        if isinstance(val, list):
+            return parallel_call(partial(func, self), val, args, kwargs)
+        else:
+            return func(self, val, *args, **kwargs)
 
-
-def stop_one(args):
-    url = args["url"]
-    site_id = args["site_id"]
-
-    mutation = 'mutation { stopSite(siteRef: "%s") }' % (site_id)
-    payload = {'query': mutation}
-    requests.post(url + '/graphql', json=payload)
-
-    wait(url, site_id, "COMPLETE")
+    return parallel_wrapper
 
 
-# Grab only the 'rows' out of a Haystack JSON response.
-# Return a list of dictionary entities.
-# If no 'rows' exist, return empty list
-def process_haystack_rows(haystack_json_response):
-    return haystack_json_response.get('rows', [])
+def create_zip(dir: PathLike) -> str:
+    """Create Zip
+    Takes a directory and creates a temporary zip file of it.
+
+    :param dir: directory to create zip of
+
+    :returns: path of zip file
+    """
+    zip_file_fd, zip_file_path = tempfile.mkstemp(prefix=path.basename(dir), suffix='.zip')
+    zip_file_path = Path(zip_file_path)
+    shutil.make_archive(str(zip_file_path.parent / zip_file_path.stem), "zip", None, str(dir))
+
+    return zip_file_path
+
+
+def prepare_model(model_path: PathLike) -> str:
+    """Prepares model for upload
+    Takes a file or directory. If the input is a file it returns the file.
+    If the input is a directory it zips the directory and returns the path to that zip.
+
+    :param model_path: path to model
+
+    :returns: path of prepared model
+    """
+    model_path = Path(model_path)
+    if model_path.is_dir():
+        return str(create_zip(str(model_path.absolute())))
+    else:
+        return str(model_path.absolute())
 
 
 class AlfalfaException(Exception):
     """Wrapper for exceptions which come from alfalfa"""
+
+
+class AlfalfaWorkerException(AlfalfaException):
+    """Wrapper for exceptions from the alfalfa worker"""
+
+
+class AlfalfaAPIException(AlfalfaException):
+    """Wrapper for API errors"""
+
+
+class AlfalfaClientException(AlfalfaException):
+    """Wrapper for exceptions in client operation"""
